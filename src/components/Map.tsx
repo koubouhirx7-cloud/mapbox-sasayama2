@@ -13,6 +13,20 @@ import { useNetworkStatus } from '../hooks/useNetworkStatus';
 
 const HIGHLANDER_COORDS: [number, number] = [135.164515, 35.062031];
 
+interface PhotoEntry {
+    id: string;
+    lat: number;
+    lng: number;
+    timestamp: number;
+    thumbnail: string;
+}
+
+interface RoutePoint {
+    lng: number;
+    lat: number;
+    timestamp: number;
+}
+
 interface MapProps {
     onStepsChange?: (steps: any[]) => void;
     onProximityChange?: (step: any, distance: number | null) => void;
@@ -23,6 +37,10 @@ interface MapProps {
     selectionTimestamp?: number;
     speed?: number;
     isNavigating?: boolean;
+    recordedPath?: RoutePoint[];
+    isRecording?: boolean;
+    photos?: PhotoEntry[];
+    onPhotoDelete?: (id: string) => void;
 }
 
 // Helper to create a circle GeoJSON
@@ -51,13 +69,18 @@ const Map: React.FC<MapProps> = ({
     onRouteLoaded,
     selectionTimestamp,
     speed = 0,
-    isNavigating = false
+    isNavigating = false,
+    recordedPath = [],
+    isRecording = false,
+    photos = [],
+    onPhotoDelete,
 }) => {
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<mapboxgl.Map | null>(null);
     // markersRef removed
     // markersRef removed
     const poiMarkersRef = useRef<mapboxgl.Marker[]>([]);
+    const photoMarkersRef = useRef<mapboxgl.Marker[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
     const [isAiPanelOpen, setIsAiPanelOpen] = useState(false);
@@ -119,6 +142,91 @@ const Map: React.FC<MapProps> = ({
     // Effects to save state
     useEffect(() => localStorage.setItem('map_is3D', is3D.toString()), [is3D]);
     useEffect(() => localStorage.setItem('map_isHistorical', isHistorical.toString()), [isHistorical]);
+
+    // === Route Recording Line ===
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!map || !map.isStyleLoaded()) return;
+
+        const sourceId = 'recorded-route';
+        const layerId = 'recorded-route-line';
+
+        const geojson: any = {
+            type: 'Feature',
+            properties: {},
+            geometry: {
+                type: 'LineString',
+                coordinates: recordedPath.map(p => [p.lng, p.lat]),
+            },
+        };
+
+        if (map.getSource(sourceId)) {
+            (map.getSource(sourceId) as any).setData(geojson);
+        } else {
+            map.addSource(sourceId, { type: 'geojson', data: geojson });
+            map.addLayer({
+                id: layerId,
+                type: 'line',
+                source: sourceId,
+                layout: { 'line-join': 'round', 'line-cap': 'round' },
+                paint: {
+                    'line-color': '#ef4444',
+                    'line-width': 4,
+                    'line-dasharray': [2, 1],
+                    'line-opacity': 0.9,
+                },
+            });
+        }
+    }, [recordedPath]);
+
+    // === Photo Markers ===
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!map) return;
+
+        // Remove old markers
+        photoMarkersRef.current.forEach(m => m.remove());
+        photoMarkersRef.current = [];
+
+        photos.forEach(photo => {
+            const el = document.createElement('div');
+            el.style.cssText = 'font-size:24px;cursor:pointer;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));transition:transform 0.2s;';
+            el.textContent = '📷';
+            el.onmouseenter = () => { el.style.transform = 'scale(1.3)'; };
+            el.onmouseleave = () => { el.style.transform = 'scale(1)'; };
+
+            const dateStr = new Date(photo.timestamp).toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+            const popup = new mapboxgl.Popup({ offset: 25, maxWidth: '220px' })
+                .setHTML(`
+                    <div style="text-align:center;font-family:sans-serif;">
+                        <img src="${photo.thumbnail}" style="width:100%;border-radius:8px;margin-bottom:6px;" />
+                        <p style="font-size:11px;color:#666;margin:0 0 6px;">${dateStr}</p>
+                        <button id="delete-photo-${photo.id}" style="font-size:11px;color:#ef4444;background:none;border:1px solid #ef4444;padding:2px 10px;border-radius:6px;cursor:pointer;">削除</button>
+                    </div>
+                `);
+
+            popup.on('open', () => {
+                setTimeout(() => {
+                    const btn = document.getElementById(`delete-photo-${photo.id}`);
+                    if (btn && onPhotoDelete) {
+                        btn.onclick = () => {
+                            onPhotoDelete(photo.id);
+                            popup.remove();
+                        };
+                    }
+                }, 50);
+            });
+
+            const marker = new mapboxgl.Marker({ element: el })
+                .setLngLat([photo.lng, photo.lat])
+                .setPopup(popup)
+                .addTo(map);
+
+            photoMarkersRef.current.push(marker);
+        });
+    }, [photos, onPhotoDelete]);
+
 
     // Refs for state access inside callbacks
     const isNavigatingRef = useRef(isNavigating);

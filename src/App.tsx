@@ -4,6 +4,9 @@ import NavigationBanner from './components/NavigationPopup' // Still using the s
 import CourseInfoPanel from './components/CourseInfoPanel'
 import { explorationRoutes } from './data/explorationRoutes'
 import { useNavigation } from './hooks/useNavigation'
+import { useRouteRecording } from './hooks/useRouteRecording'
+import { usePhotoMapping } from './hooks/usePhotoMapping'
+import { useVoiceGuide } from './hooks/useVoiceGuide'
 
 import WelcomeGuide from './components/WelcomeGuide'
 import { getDistance } from './utils/distance'
@@ -35,11 +38,31 @@ function App() {
     // Navigation State
     const [routeSteps, setRouteSteps] = useState<any[]>([]);
 
-    // ... (rest of hooks)
+    // Route Recording
+    const {
+        isRecording,
+        isPaused,
+        recordedPath,
+        stats: recordingStats,
+        savedRoutes,
+        startRecording,
+        pauseRecording,
+        resumeRecording,
+        stopRecording,
+        addPoint,
+        deleteRoute,
+        getRouteAsGeoJSON,
+    } = useRouteRecording();
 
+    // Photo Mapping
+    const { photos, deletePhoto, triggerCapture } = usePhotoMapping();
 
+    // Voice Guide
+    const { isVoiceGuideEnabled, isSpeaking, updatePosition: updateVoicePosition, toggleVoiceGuide } = useVoiceGuide();
 
-    // Derived state for active route info
+    // Saved routes UI
+    const [showSavedRoutes, setShowSavedRoutes] = useState(false);
+
     // Derived state for active route info
     const selectedRoute = useMemo(() => explorationRoutes.find(r => r.id === activeRoute), [activeRoute]);
 
@@ -52,8 +75,6 @@ function App() {
         startNavigation,
         stopNavigation
     } = useNavigation(routeSteps);
-
-
 
     // Sorted Routes Logic
     const sortedRoutes = useMemo(() => {
@@ -77,6 +98,15 @@ function App() {
     const formatDist = (meters: number) => {
         if (meters >= 1000) return `${(meters / 1000).toFixed(1)}km`;
         return `${Math.round(meters)}m`;
+    };
+
+    // Format duration for display
+    const formatDuration = (ms: number) => {
+        const minutes = Math.floor(ms / 60000);
+        const hours = Math.floor(minutes / 60);
+        const mins = minutes % 60;
+        if (hours > 0) return `${hours}時間${mins}分`;
+        return `${mins}分`;
     };
 
     return (
@@ -105,8 +135,33 @@ function App() {
                 .animate-pulse-slow {
                     animation: pulse-slow 3s ease-in-out infinite;
                 }
+                @keyframes rec-blink {
+                    0%, 100% { opacity: 1; }
+                    50% { opacity: 0.3; }
+                }
+                .animate-rec-blink {
+                    animation: rec-blink 1s ease-in-out infinite;
+                }
                 `}
             </style>
+
+            {/* REC Indicator */}
+            {isRecording && (
+                <div className="fixed top-4 right-4 z-[200] flex items-center gap-2 bg-black/80 text-white px-4 py-2 rounded-full shadow-2xl backdrop-blur-sm">
+                    <span className={`w-3 h-3 rounded-full ${isPaused ? 'bg-yellow-400' : 'bg-red-500 animate-rec-blink'}`}></span>
+                    <span className="text-sm font-bold">{isPaused ? 'PAUSED' : 'REC'}</span>
+                    <span className="text-xs text-gray-300 ml-1">{formatDist(recordingStats.distance)}</span>
+                    <span className="text-xs text-gray-400">{formatDuration(recordingStats.duration)}</span>
+                </div>
+            )}
+
+            {/* Voice Guide Speaking Indicator */}
+            {isSpeaking && (
+                <div className="fixed top-14 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-2 bg-indigo-600/90 text-white px-4 py-2 rounded-full shadow-2xl backdrop-blur-sm">
+                    <span className="text-lg">🔊</span>
+                    <span className="text-sm font-bold">ガイド中...</span>
+                </div>
+            )}
 
             {/* Mobile Menu Toggle Button */}
             <button
@@ -166,7 +221,7 @@ function App() {
                                                     setSelectionTimestamp(Date.now());
                                                     setIsSidebarOpen(false);
                                                 }}
-                                                className="flex-1 text-left flex flex-col gap-1 min-w-0" // min-w-0 for truncation logic if needed
+                                                className="flex-1 text-left flex flex-col gap-1 min-w-0"
                                             >
                                                 <div className="flex items-start gap-2">
                                                     <span className={`mt-1.5 w-2.5 h-2.5 rounded-full flex-shrink-0 ${activeRoute === route.id ? 'bg-satoyama-forest' : 'bg-satoyama-leaf'}`}></span>
@@ -210,7 +265,7 @@ function App() {
                     </div>
 
                     {/* Area Guides Section */}
-                    <div>
+                    <div className="mb-8">
                         <h2 className="text-xs uppercase tracking-widest text-satoyama-leaf font-bold mb-3 px-2 flex items-center gap-2">
                             <span className="text-lg">🗺️</span> エリアガイド
                         </h2>
@@ -234,9 +289,84 @@ function App() {
                             ))}
                         </div>
                     </div>
+
+                    {/* Route Recording Section */}
+                    <div className="mb-8">
+                        <h2 className="text-xs uppercase tracking-widest text-satoyama-leaf font-bold mb-3 px-2 flex items-center gap-2">
+                            <span className="text-lg">📍</span> 走行ログ
+                        </h2>
+
+                        {/* Recording Controls */}
+                        <div className="mb-3 px-2">
+                            {!isRecording ? (
+                                <button
+                                    onClick={startRecording}
+                                    className="w-full bg-red-500 hover:bg-red-600 text-white py-2.5 rounded-lg font-bold text-sm transition-colors flex items-center justify-center gap-2 shadow-md"
+                                >
+                                    <span className="w-2.5 h-2.5 bg-white rounded-full"></span>
+                                    記録開始
+                                </button>
+                            ) : (
+                                <div className="space-y-2">
+                                    <div className="bg-black/20 rounded-lg p-3 text-center">
+                                        <div className="text-white text-lg font-bold">{formatDist(recordingStats.distance)}</div>
+                                        <div className="flex justify-center gap-4 text-xs text-gray-300 mt-1">
+                                            <span>{formatDuration(recordingStats.duration)}</span>
+                                            <span>{recordingStats.avgSpeed.toFixed(1)} km/h</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={isPaused ? resumeRecording : pauseRecording}
+                                            className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-white py-2 rounded-lg font-bold text-xs transition-colors"
+                                        >
+                                            {isPaused ? '▶ 再開' : '⏸ 一時停止'}
+                                        </button>
+                                        <button
+                                            onClick={() => stopRecording()}
+                                            className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 rounded-lg font-bold text-xs transition-colors"
+                                        >
+                                            ⏹ 保存
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Saved Routes */}
+                        {savedRoutes.length > 0 && (
+                            <div>
+                                <button
+                                    onClick={() => setShowSavedRoutes(!showSavedRoutes)}
+                                    className="w-full text-left px-2 text-xs text-satoyama-leaf/80 hover:text-satoyama-leaf flex items-center gap-1 transition-colors mb-2"
+                                >
+                                    <span className={`transition-transform ${showSavedRoutes ? 'rotate-90' : ''}`}>▶</span>
+                                    保存済み ({savedRoutes.length})
+                                </button>
+                                {showSavedRoutes && (
+                                    <div className="space-y-1.5">
+                                        {savedRoutes.map(route => (
+                                            <div key={route.id} className="bg-white/10 rounded-lg px-3 py-2 flex items-center justify-between group">
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-medium text-white truncate">{route.name}</p>
+                                                    <p className="text-[10px] text-gray-400">
+                                                        {formatDist(route.distance)} · {formatDuration(route.duration)} · {route.avgSpeed.toFixed(1)}km/h
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    onClick={() => deleteRoute(route.id)}
+                                                    className="text-red-400 hover:text-red-300 opacity-0 group-hover:opacity-100 transition-all text-xs ml-2 flex-shrink-0"
+                                                >
+                                                    ✕
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
                 </div>
-
-
 
                 <div className="p-4 border-t border-white/10 text-[10px] text-center text-satoyama-leaf opacity-60">
                     &copy; 2026 Green-Gear Project
@@ -263,23 +393,53 @@ function App() {
                     />
                 )}
 
+                {/* Voice Guide Toggle */}
+                <button
+                    onClick={toggleVoiceGuide}
+                    className={`absolute bottom-6 right-4 z-30 w-12 h-12 rounded-full shadow-xl flex items-center justify-center text-xl transition-all duration-300
+                        ${isVoiceGuideEnabled
+                            ? 'bg-indigo-600 text-white ring-2 ring-indigo-300 scale-110'
+                            : 'bg-white/90 text-gray-500 hover:bg-white'}`}
+                    title={isVoiceGuideEnabled ? '音声ガイド ON' : '音声ガイド OFF'}
+                >
+                    {isVoiceGuideEnabled ? '🔊' : '🔇'}
+                </button>
+
+                {/* Photo Capture FAB */}
+                <button
+                    onClick={() => {
+                        if (userLocation) {
+                            triggerCapture(userLocation.lat, userLocation.lng);
+                        }
+                    }}
+                    disabled={!userLocation}
+                    className={`absolute bottom-20 right-4 z-30 w-12 h-12 rounded-full shadow-xl flex items-center justify-center text-xl transition-all duration-300
+                        ${userLocation
+                            ? 'bg-emerald-600 text-white hover:bg-emerald-700 hover:scale-110'
+                            : 'bg-gray-300 text-gray-400 cursor-not-allowed'}`}
+                    title="写真を撮る"
+                >
+                    📷
+                </button>
+
                 <Map
                     activeRoute={activeRoute}
                     isNavigating={isNavigating}
-
                     selectionTimestamp={selectionTimestamp}
                     speed={currentSpeed}
+                    recordedPath={recordedPath}
+                    isRecording={isRecording}
+                    photos={photos}
+                    onPhotoDelete={deletePhoto}
                     onUserLocationChange={(lat, lng) => {
                         setUserLocation({ lat, lng });
                         updateLocation(lat, lng);
+                        addPoint(lat, lng);
+                        updateVoicePosition(lat, lng);
                     }}
                     onStepsChange={(steps) => {
                         setRouteSteps(steps);
-                        // Hacky way to get geometry: Map component should probably expose it better
-                        // But for now, we rely on the fact that Map fetches it.
-                        // Ideally we pass a callback for full route data.
                     }}
-                    // Enhanced prop to capture geometry
                     onRouteLoaded={() => { }}
                     onProximityChange={() => { }}
                 />
