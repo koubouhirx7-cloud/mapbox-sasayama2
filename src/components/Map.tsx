@@ -1150,28 +1150,6 @@ const Map: React.FC<MapProps> = ({
             )
             }
 
-            {/* Historical Toggle Button */}
-            <button
-                onClick={() => {
-                    if (mapRef.current && mapRef.current.getLayer('historical-layer')) {
-                        const nextState = !isHistorical;
-                        mapRef.current.setLayoutProperty(
-                            'historical-layer',
-                            'visibility',
-                            nextState ? 'visible' : 'none'
-                        );
-                        setIsHistorical(nextState);
-                    }
-                }}
-                className={`absolute top-40 right-3 z-10 p-3 rounded-full shadow-lg transition-all duration-300 flex items-center justify-center font-bold text-xs
-                    ${isHistorical
-                        ? 'bg-sepia-700 text-white bg-[#5D4037] ring-2 ring-[#8D6E63]'
-                        : 'bg-white text-gray-700 hover:bg-gray-50'}`}
-                style={{ width: '40px', height: '40px' }}
-                aria-label="Toggle Historical Map"
-            >
-                {isHistorical ? '古' : '今'}
-            </button>
 
             {/* Current Location Button */}
             <button
