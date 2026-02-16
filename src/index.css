@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    width: 100%;
+}
+
+/* Mapbox Popup Customization */
+.mapboxgl-popup-content {
+    padding: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+.mapboxgl-popup-tip {
+    border-top-color: #2D5A27 !important;
+}
+
+.mapboxgl-popup-close-button {
+    color: white !important;
+    font-size: 16px !important;
+    padding: 4px 8px !important;
+    top: 2px !important;
+    right: 2px !important;
+}
+
+/* Navigation Controls Customization */
+.mapboxgl-ctrl-group {
+    background-color: #F4F1E8 !important;
+    border: 1px solid rgba(45, 90, 39, 0.2) !important;
+}
+
+@keyframes slide-up {
+    0% {
+        transform: translateY(100%);
+        opacity: 0;
+    }
+
+    100% {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.animate-slide-up {
+    animation: slide-up 0.4s ease-out forwards;
+}
